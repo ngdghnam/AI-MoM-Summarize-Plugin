@@ -33,6 +33,7 @@
   },
   "type": "module",
   "devDependencies": {
+    "concurrently": "^10.0.3",
     "turbo": "^2.10.6"
   }
 }
