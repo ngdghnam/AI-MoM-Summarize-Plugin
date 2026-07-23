@@ -1,0 +1,38 @@
+{
+  "name": "ai-mom-summarize-plugin",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "clean": "turbo run clean"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.17.0",
+      "onFail": "download"
+    }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@swc/core",
+      "esbuild",
+      "lmdb",
+      "msgpackr-extract",
+      "sharp",
+      "unrs-resolver",
+      "@nestjs/core",
+      "@nestjs/cli"
+    ]
+  },
+  "type": "module",
+  "devDependencies": {
+    "turbo": "^2.10.6"
+  }
+}
