@@ -4,3 +4,6 @@ node_modules
 dist
 .turbo
 sessions
+__pycache__
+.env.local
+!.env.example
