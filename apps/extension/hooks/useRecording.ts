@@ -1,8 +1,16 @@
-import { useState, useEffect, useCallback } from "react"
+import { useEffect, useCallback } from "react"
+import { useStorage } from "@plasmohq/storage/hook"
+
+import { Storage } from "@plasmohq/storage"
 
 export function useRecording() {
-  const [isRecording, setIsRecording] = useState(false)
-  const [recordTime, setRecordTime] = useState(0)
+  const [isRecording, setIsRecording] = useStorage("isRecording", false)
+  const [recordTime, setRecordTime] = useStorage({
+    key: "recordTime",
+    instance: new Storage({
+      area: "local"
+    })
+  }, 0)
 
   // Timer logic for mockup
   useEffect(() => {
@@ -23,9 +31,21 @@ export function useRecording() {
     return `${m}:${s}`
   }, [])
 
-  const handleToggleRecord = useCallback(() => {
-    setIsRecording((prev) => !prev)
-  }, [])
+  const handleToggleRecord = useCallback(async () => {
+    const newState = !isRecording
+    await setIsRecording(newState)
+    
+    if (typeof chrome !== "undefined" && chrome.tabs) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTabId = tabs[0]?.id;
+        if (newState) {
+          chrome.runtime.sendMessage({ action: "START_RECORDING", tabId: activeTabId });
+        } else {
+          chrome.runtime.sendMessage({ action: "STOP_RECORDING", reason: "USER_TOGGLED" });
+        }
+      });
+    }
+  }, [isRecording, setIsRecording])
 
   return {
     isRecording,

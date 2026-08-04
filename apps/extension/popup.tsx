@@ -1,12 +1,28 @@
-import { Play, Square, History, Settings, Users, ChevronRight, AlertCircle } from "lucide-react"
+import { Play, Square, History, Settings, Users, ChevronRight, AlertCircle, MessageSquareText } from "lucide-react"
 import "./style.css"
 import { Button } from "~/components/ui/button"
 import { useRecording } from "~/hooks/useRecording"
 import { useMeetingContext } from "~/hooks/useMeetingContext"
+import { useStorage } from "@plasmohq/storage/hook"
+import { Storage } from "@plasmohq/storage"
 
 function IndexPopup() {
   const { isRecording, recordTime, formatTime, handleToggleRecord } = useRecording()
   const { isMeetingPage } = useMeetingContext()
+  
+  const [isActiveMeeting] = useStorage({
+    key: "isActiveMeeting",
+    instance: new Storage({ area: "local" })
+  }, false)
+  
+  const [isSidebarOpen, setIsSidebarOpen] = useStorage({
+    key: "isSidebarOpen",
+    instance: new Storage({ area: "local" })
+  }, false)
+
+  const handleToggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen)
+  }
 
   if (isMeetingPage === null) {
     return (
@@ -16,7 +32,7 @@ function IndexPopup() {
     )
   }
 
-  if (isMeetingPage === false) {
+  if (isMeetingPage === false || isActiveMeeting === false) {
     return (
       <div className="w-[360px] min-h-[250px] bg-background text-foreground font-sans flex flex-col items-center justify-center rounded-xl overflow-hidden shadow-sm p-6 text-center gap-4">
         <div className="w-16 h-16 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-500 mb-2">
@@ -26,7 +42,9 @@ function IndexPopup() {
           Meeting Not Detected
         </h2>
         <p className="text-sm leading-relaxed">
-          You must be in an active meeting room (Google Meet, Zoom, or Teams) to activate this plugin.
+          {isMeetingPage 
+            ? "Bạn đang ở phòng chờ. Vui lòng Join (Tham gia) vào cuộc họp chính thức để sử dụng Live Captions." 
+            : "You must be in an active meeting room (Google Meet, Zoom, or Teams) to activate this plugin."}
         </p>
       </div>
     )
@@ -48,14 +66,25 @@ function IndexPopup() {
               <span className="w-3 h-3 rounded-full bg-destructive animate-pulse"></span>
               {formatTime(recordTime)}
             </div>
-            <Button 
-              variant="destructive" 
-              className="w-full rounded-xl h-11 shadow-sm font-semibold text-md"
-              onClick={handleToggleRecord}
-            >
-              <Square className="w-4 h-4 mr-2 fill-current" />
-              End Meeting
-            </Button>
+            
+            <div className="flex gap-2 w-full">
+               <Button 
+                 variant="outline" 
+                 className="flex-1 rounded-xl h-11 shadow-sm font-semibold"
+                 onClick={handleToggleSidebar}
+               >
+                 <MessageSquareText className="w-4 h-4 mr-2" />
+                 {isSidebarOpen ? "Hide Transcript" : "Show Transcript"}
+               </Button>
+               <Button 
+                 variant="destructive" 
+                 className="flex-1 rounded-xl h-11 shadow-sm font-semibold text-md"
+                 onClick={handleToggleRecord}
+               >
+                 <Square className="w-4 h-4 mr-2 fill-current" />
+                 End
+               </Button>
+            </div>
           </div>
         ) : (
           <Button 
@@ -63,7 +92,7 @@ function IndexPopup() {
             onClick={handleToggleRecord}
           >
             <Play className="w-5 h-5 mr-2 fill-current" />
-            Start New Meeting
+            Start Live Captions
           </Button>
         )}
 
