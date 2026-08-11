@@ -77,7 +77,11 @@
     ],
     "permissions": [
       "tabs",
-      "storage"
+      "storage",
+      "offscreen",
+      "tabCapture",
+      "activeTab",
+      "scripting"
     ]
   }
 }

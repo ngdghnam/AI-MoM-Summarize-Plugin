@@ -2,6 +2,6 @@
   "name": "ai-service",
   "private": true,
   "scripts": {
-    "dev": "..\\..\\.venv\\Scripts\\uvicorn server:app --reload --port 8000"
+    "dev": "python -u server.py"
   }
 }

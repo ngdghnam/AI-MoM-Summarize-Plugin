@@ -33,8 +33,9 @@ export function useRecording() {
 
   const handleToggleRecord = useCallback(async () => {
     const newState = !isRecording
-    await setIsRecording(newState)
     
+    // IMPORTANT: Send message synchronously BEFORE any await to preserve user gesture context!
+    // Otherwise, chrome.tabCapture will throw "Extension has not been invoked for the current page"
     if (typeof chrome !== "undefined" && chrome.tabs) {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const activeTabId = tabs[0]?.id;
@@ -45,6 +46,8 @@ export function useRecording() {
         }
       });
     }
+
+    await setIsRecording(newState)
   }, [isRecording, setIsRecording])
 
   return {
