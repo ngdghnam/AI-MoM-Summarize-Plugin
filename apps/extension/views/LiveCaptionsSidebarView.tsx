@@ -4,15 +4,14 @@ import { useStorage } from "@plasmohq/storage/hook"
 import { Storage } from "@plasmohq/storage"
 import { Button } from "~/components/ui/button"
 
-const MOCK_MESSAGES = [
-  { id: 1, speaker: "Tôi", text: "Xin chào mọi người, hôm nay chúng ta sẽ bàn về kế hoạch Q3 nhé.", timestamp: "14:05:10", isMe: true },
-  { id: 2, speaker: "Người khác", text: "Chào bạn. Mình đã đọc qua tài liệu bạn gửi rồi.", timestamp: "14:05:22", isMe: false },
-  { id: 3, speaker: "Tôi", text: "Tuyệt vời, vậy bạn thấy sao về phần phân bổ ngân sách?", timestamp: "14:05:30", isMe: true },
-  { id: 4, speaker: "Người khác", text: "Mình nghĩ phần Marketing hơi thấp, có lẽ nên tăng thêm 15%.", timestamp: "14:05:45", isMe: false },
-  { id: 5, speaker: "Người khác", text: "Ngoài ra thì đội sale cũng cần thêm resources cho chiến dịch mới.", timestamp: "14:05:55", isMe: false },
-  { id: 6, speaker: "Tôi", text: "Đồng ý. Vậy mình sẽ điều chỉnh lại kế hoạch tài chính và gửi lại cho mọi người vào chiều nay.", timestamp: "14:06:10", isMe: true },
-  { id: 7, speaker: "Người khác", text: "Ok, cảm ơn bạn.", timestamp: "14:06:15", isMe: false },
-];
+interface TranscriptMessage {
+  id: number;
+  speaker: string;
+  text: string;
+  timestamp: string;
+  isMe: boolean;
+}
+
 
 export function LiveCaptionsSidebarView() {
   const [isOpen, setIsOpen] = useStorage({
@@ -27,13 +26,38 @@ export function LiveCaptionsSidebarView() {
     instance: new Storage({ area: "local" })
   }, false)
   
-  const [messages, setMessages] = useState<typeof MOCK_MESSAGES>([])
+  const [messages, setMessages] = useState<TranscriptMessage[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Populate mock messages when recording starts
+  // Listen for real STT messages from offscreen
   useEffect(() => {
-    if (isRecording && messages.length === 0) {
-      setMessages(MOCK_MESSAGES);
+    if (!isRecording) {
+      return;
+    }
+
+    const messageListener = (message: any) => {
+      if (message.target === "content" && message.type === "stt-result") {
+        const result = message.data
+        if (result.text) {
+          setMessages(prev => {
+            const now = new Date();
+            const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            
+            return [...prev, {
+              id: Date.now() + Math.random(),
+              speaker: result.channel === "left" ? "Tôi" : "Người khác",
+              text: result.text,
+              timestamp: timeStr,
+              isMe: result.channel === "left"
+            }]
+          })
+        }
+      }
+    }
+
+    chrome.runtime.onMessage.addListener(messageListener)
+    return () => {
+      chrome.runtime.onMessage.removeListener(messageListener)
     }
   }, [isRecording])
 

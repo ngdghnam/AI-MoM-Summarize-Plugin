@@ -1,2 +1,17 @@
+# Core API server
 fastapi
-uvicorn
+uvicorn[standard]
+
+# WebSocket support (used by FastAPI)
+websockets
+
+# Speech-to-Text engine
+faster-whisper
+
+# Audio processing
+numpy
+
+# Voice Activity Detection (phát hiện khoảng im lặng, tránh tốn CPU)
+silero-vad
+
+pydantic_settings

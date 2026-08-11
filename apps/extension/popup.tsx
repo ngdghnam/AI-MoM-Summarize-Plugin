@@ -1,14 +1,46 @@
-import { Play, Square, History, Settings, Users, ChevronRight, AlertCircle, MessageSquareText } from "lucide-react"
+import { Play, Square, History, Settings, Users, ChevronRight, AlertCircle, MessageSquareText, Mic } from "lucide-react"
 import "./style.css"
 import { Button } from "~/components/ui/button"
 import { useRecording } from "~/hooks/useRecording"
 import { useMeetingContext } from "~/hooks/useMeetingContext"
 import { useStorage } from "@plasmohq/storage/hook"
 import { Storage } from "@plasmohq/storage"
+import { useEffect, useState } from "react"
 
 function IndexPopup() {
   const { isRecording, recordTime, formatTime, handleToggleRecord } = useRecording()
   const { isMeetingPage } = useMeetingContext()
+  const [hasMicPermission, setHasMicPermission] = useState<boolean>(true)
+  
+  useEffect(() => {
+    // Check mic permission on load
+    navigator.permissions.query({ name: "microphone" as PermissionName })
+      .then(status => {
+        setHasMicPermission(status.state === "granted")
+        status.onchange = () => setHasMicPermission(status.state === "granted")
+      })
+      .catch(() => {
+        // Fallback if permissions.query fails
+      })
+  }, [])
+
+  const handleRequestMic = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach(t => t.stop())
+      setHasMicPermission(true)
+    } catch (err: any) {
+      console.error("Popup mic request failed:", err)
+      // Fallback: If Chrome strict blocks popup prompts, open a small centered window
+      chrome.windows.create({
+        url: chrome.runtime.getURL("options.html"),
+        type: "popup",
+        width: 450,
+        height: 500,
+        focused: true
+      })
+    }
+  }
   
   const [isActiveMeeting] = useStorage({
     key: "isActiveMeeting",
@@ -60,7 +92,18 @@ function IndexPopup() {
       </header>
       
       <main className="px-5 pb-6 flex flex-col gap-3">
-        {isRecording ? (
+        {!hasMicPermission ? (
+          <div className="flex flex-col items-center justify-center p-5 bg-orange-50 dark:bg-orange-950/30 rounded-xl border border-orange-100 dark:border-orange-900 mb-2">
+            <Mic className="w-8 h-8 text-orange-500 mb-3" />
+            <h3 className="font-bold text-center mb-2">Microphone Access Required</h3>
+            <p className="text-sm text-center text-slate-600 dark:text-slate-400 mb-4">
+              We need microphone access to capture your voice for the STT service.
+            </p>
+            <Button className="w-full font-bold shadow-md rounded-xl" onClick={handleRequestMic}>
+              Grant Permission
+            </Button>
+          </div>
+        ) : isRecording ? (
           <div className="flex flex-col items-center justify-center p-5 bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-100 dark:border-red-900 mb-2">
             <div className="flex items-center gap-2 text-destructive font-bold mb-4 text-lg">
               <span className="w-3 h-3 rounded-full bg-destructive animate-pulse"></span>
