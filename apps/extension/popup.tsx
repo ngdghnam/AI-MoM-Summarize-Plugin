@@ -1,4 +1,4 @@
-import { Play, Square, History, Settings, Users, ChevronRight, AlertCircle, MessageSquareText, Mic } from "lucide-react"
+import { Play, Square, History, Settings, Users, ChevronRight, AlertCircle, MessageSquareText, Mic, Loader2 } from "lucide-react"
 import "./style.css"
 import { Button } from "~/components/ui/button"
 import { useRecording } from "~/hooks/useRecording"
@@ -8,7 +8,7 @@ import { Storage } from "@plasmohq/storage"
 import { useEffect, useState } from "react"
 
 function IndexPopup() {
-  const { isRecording, recordTime, formatTime, handleToggleRecord } = useRecording()
+  const { isRecording, isStarting, recordingError, recordTime, formatTime, handleToggleRecord } = useRecording()
   const { isMeetingPage } = useMeetingContext()
   const [hasMicPermission, setHasMicPermission] = useState<boolean>(true)
   
@@ -92,7 +92,8 @@ function IndexPopup() {
       </header>
       
       <main className="px-5 pb-6 flex flex-col gap-3">
-        {!hasMicPermission ? (
+        {recordingError && <p role="alert" className="text-sm text-destructive">{recordingError}</p>}
+        {!hasMicPermission && !isRecording && !isStarting ? (
           <div className="flex flex-col items-center justify-center p-5 bg-orange-50 dark:bg-orange-950/30 rounded-xl border border-orange-100 dark:border-orange-900 mb-2">
             <Mic className="w-8 h-8 text-orange-500 mb-3" />
             <h3 className="font-bold text-center mb-2">Microphone Access Required</h3>
@@ -123,6 +124,7 @@ function IndexPopup() {
                  variant="destructive" 
                  className="flex-1 rounded-xl h-11 shadow-sm font-semibold text-md"
                  onClick={handleToggleRecord}
+            disabled={isStarting}
                >
                  <Square className="w-4 h-4 mr-2 fill-current" />
                  End
@@ -133,9 +135,10 @@ function IndexPopup() {
           <Button 
             className="w-full h-12 text-md font-bold bg-gradient-to-r from-primary to-orange-500 hover:opacity-90 shadow-md rounded-xl transition-transform hover:scale-[1.02]"
             onClick={handleToggleRecord}
+            disabled={isStarting}
           >
-            <Play className="w-5 h-5 mr-2 fill-current" />
-            Start Live Captions
+            {isStarting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Play className="w-5 h-5 mr-2 fill-current" />}
+            {isStarting ? "Đang kết nối âm thanh…" : "Start Live Captions"}
           </Button>
         )}
 

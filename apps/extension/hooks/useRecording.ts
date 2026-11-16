@@ -1,29 +1,32 @@
-import { useEffect, useCallback } from "react"
+import { useEffect, useCallback, useState, useRef } from "react"
 import { useStorage } from "@plasmohq/storage/hook"
 
 import { Storage } from "@plasmohq/storage"
+const recordingStorage = new Storage({ area: "local" })
 
-export function useRecording() {
-  const [isRecording, setIsRecording] = useStorage("isRecording", false)
-  const [recordTime, setRecordTime] = useStorage({
-    key: "recordTime",
-    instance: new Storage({
-      area: "local"
-    })
-  }, 0)
+export function useRecording(trackDuration = true) {
+  const [isRecording] = useStorage({ key: "isRecording", instance: recordingStorage }, false)
+  const [startedAt] = useStorage({ key: "recordingStartedAt", instance: recordingStorage }, 0)
+  const [recordTime, setRecordTime] = useState(0)
 
-  // Timer logic for mockup
+  const [isPending, setIsPending] = useState(false)
+  const [isRecordingChanging] = useStorage({ key: "isRecordingChanging", instance: recordingStorage }, false)
+  const isStarting = isPending || isRecordingChanging
+  const pendingRef = useRef(false)
+  const [recordingError, setRecordingError] = useStorage({ key: "recordingError", instance: recordingStorage }, "")
+
   useEffect(() => {
-    let interval: NodeJS.Timeout
-    if (isRecording) {
-      interval = setInterval(() => {
-        setRecordTime((prev) => prev + 1)
-      }, 1000)
-    } else {
-      setRecordTime(0)
-    }
+    void chrome.runtime.sendMessage({ action: "RECORDING_STATUS" }).catch(() => {})
+  }, [])
+
+  // Recording duration
+  useEffect(() => {
+    if (!trackDuration) return
+    const update = () => setRecordTime(isRecording && startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0)
+    update()
+    const interval = setInterval(update, 1000)
     return () => clearInterval(interval)
-  }, [isRecording])
+  }, [isRecording, startedAt, trackDuration])
 
   const formatTime = useCallback((seconds: number) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, "0")
@@ -32,26 +35,33 @@ export function useRecording() {
   }, [])
 
   const handleToggleRecord = useCallback(async () => {
-    const newState = !isRecording
-    
-    // IMPORTANT: Send message synchronously BEFORE any await to preserve user gesture context!
-    // Otherwise, chrome.tabCapture will throw "Extension has not been invoked for the current page"
-    if (typeof chrome !== "undefined" && chrome.tabs) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTabId = tabs[0]?.id;
-        if (newState) {
-          chrome.runtime.sendMessage({ action: "START_RECORDING", tabId: activeTabId });
-        } else {
-          chrome.runtime.sendMessage({ action: "STOP_RECORDING", reason: "USER_TOGGLED" });
-        }
-      });
+    if (pendingRef.current || isRecordingChanging) return
+    pendingRef.current = true
+    setIsPending(true)
+    try {
+      void setRecordingError("")
+      if (isRecording) {
+        const response = await chrome.runtime.sendMessage({ action: "STOP_RECORDING", reason: "USER_TOGGLED" })
+        if (!response?.ok) throw new Error(response?.error || "Recording did not stop")
+      } else {
+        const tabs = chrome.tabs?.query
+          ? await chrome.tabs.query({ active: true, currentWindow: true })
+          : []
+        const response = await chrome.runtime.sendMessage({ action: "START_RECORDING", tabId: tabs[0]?.id })
+        if (!response?.ok) throw new Error(response?.error || "Recording did not start")
+      }
+    } catch (error) {
+      await setRecordingError(error instanceof Error ? error.message : String(error))
+    } finally {
+      pendingRef.current = false
+      setIsPending(false)
     }
-
-    await setIsRecording(newState)
-  }, [isRecording, setIsRecording])
+  }, [isRecording, isRecordingChanging, setRecordingError])
 
   return {
     isRecording,
+    isStarting,
+    recordingError,
     recordTime,
     formatTime,
     handleToggleRecord,

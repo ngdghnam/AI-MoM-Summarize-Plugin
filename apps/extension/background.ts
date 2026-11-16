@@ -1,75 +1,87 @@
 import { Storage } from "@plasmohq/storage"
 
-const storage = new Storage()
+const storage = new Storage({ area: "local" })
+let commands: Promise<unknown> = Promise.resolve()
 
-let recordingTabId: number | null = null;
+async function captureStatus() {
+  try {
+    return await chrome.runtime.sendMessage({ target: "offscreen", type: "capture-status" })
+  } catch { return null }
+}
 
-async function setupOffscreenDocument(path: string) {
-  const existingContexts = await chrome.runtime.getContexts({
-    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-    documentUrls: [chrome.runtime.getURL(path)]
-  });
+async function stopRecording(error = "") {
+  await chrome.runtime.sendMessage({ target: "offscreen", type: "stop-capture" }).catch(() => {})
+  await storage.setMany({ isRecording: false, recordingStartedAt: 0, recordingError: error })
+}
 
-  if (existingContexts.length > 0) {
-    return;
+async function startRecording(tabId?: number) {
+  if ((await captureStatus())?.active) return { ok: true }
+  if (tabId == null) throw new Error("No meeting tab selected")
+  const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] })
+  if (!contexts.length) {
+    await chrome.offscreen.createDocument({
+      url: "tabs/offscreen.html", reasons: [chrome.offscreen.Reason.USER_MEDIA],
+      justification: "Recording microphone and meeting audio"
+    })
   }
-
-  await chrome.offscreen.createDocument({
-    url: path,
-    reasons: [chrome.offscreen.Reason.USER_MEDIA],
-    justification: "Recording from microphone and tab for AI transcription"
-  });
+  let ready = false
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (await captureStatus()) { ready = true; break }
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  if (!ready) throw new Error("Offscreen capture is not ready")
+  const streamId = await new Promise<string>((resolve, reject) => {
+    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, streamId => {
+      const error = chrome.runtime.lastError
+      if (error) reject(new Error(error.message || "Tab capture failed"))
+      else resolve(streamId)
+    })
+  })
+  const result = await chrome.runtime.sendMessage({ target: "offscreen", type: "start-capture", streamId, tabId })
+  if (!result?.ok) throw new Error(result?.error || "Capture did not start")
+  await storage.setMany({ isRecording: true, recordingStartedAt: Date.now(), recordingError: "", isSidebarOpen: true })
+  return { ok: true }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "START_RECORDING") {
-    recordingTabId = message.tabId || sender.tab?.id || null;
-    console.log("Started recording on tab:", recordingTabId);
-    
-    if (recordingTabId) {
-      chrome.tabCapture.getMediaStreamId({ targetTabId: recordingTabId }, async (streamId) => {
-        if (chrome.runtime.lastError) {
-          console.error("Tab capture error:", chrome.runtime.lastError.message);
-          return;
-        }
-        
-        await setupOffscreenDocument("tabs/offscreen.html");
-        
-        // Wait 500ms for React offscreen component to mount and register listener
-        await new Promise(r => setTimeout(r, 500));
-
-        // Send streamId to offscreen document
-        chrome.runtime.sendMessage({
-          target: "offscreen",
-          type: "start-capture",
-          streamId: streamId,
-          tabId: recordingTabId
-        }).catch(err => console.log("Failed to send start-capture:", err));
-      });
+  if (message.action === "STT_RESULT") {
+    void chrome.tabs.sendMessage(message.tabId, { target: "content", type: "stt-result", data: message.data }).catch(() => {})
+    return
+  }
+  if (!["START_RECORDING", "STOP_RECORDING", "CAPTURE_FAILED", "RECORDING_STATUS"].includes(message.action)) return
+  const operation = commands.catch(() => {}).then(async () => {
+    if (message.action === "START_RECORDING" || message.action === "STOP_RECORDING") {
+      await storage.setMany({ isRecordingChanging: true })
     }
-  }
-  
-  if (message.action === "STOP_RECORDING") {
-    recordingTabId = null;
-    
-    // Stop offscreen capture
-    chrome.runtime.sendMessage({ target: "offscreen", type: "stop-capture" }).catch(() => {});
-    
-    // Set storage values asynchronously
-    storage.set("isRecording", false).then(() => {
-      console.log("isRecording set to false");
-    });
-    console.log("Recording stopped due to:", message.reason);
-  }
+    try {
+    if (message.action === "START_RECORDING") return await startRecording(message.tabId ?? sender.tab?.id)
+    const status = await captureStatus()
+    if (message.action === "RECORDING_STATUS") {
+      if (!status?.active) await storage.setMany({ isRecording: false, recordingStartedAt: 0 })
+      return { ok: true }
+    }
+    if (message.action === "CAPTURE_FAILED") {
+      if (status?.active) return { ok: true }
+      await stopRecording(message.error)
+    } else {
+      if (sender.tab && status?.active && status.tabId !== sender.tab.id) return { ok: true }
+      await stopRecording()
+    }
+    return { ok: true }
+    } finally {
+      await storage.setMany({ isRecordingChanging: false })
+    }
+  })
+  commands = operation.then(result => { sendResponse(result) }, async error => {
+    const detail = error instanceof Error ? error.message : String(error)
+    await stopRecording(detail)
+    sendResponse({ ok: false, error: detail })
+  })
+  return true
 })
 
-chrome.tabs.onRemoved.addListener((tabId) => {
-  if (recordingTabId === tabId) {
-    recordingTabId = null;
-    chrome.runtime.sendMessage({ target: "offscreen", type: "stop-capture" });
-    storage.set("isRecording", false).then(() => {
-      console.log("Recording stopped because tab was closed");
-    });
-  }
+chrome.tabs.onRemoved.addListener(tabId => {
+  commands = commands.catch(() => {}).then(async () => {
+    if ((await captureStatus())?.tabId === tabId) await stopRecording()
+  })
 })
-

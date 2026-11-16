@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Decorative listening indicator; this does not represent microphone volume. */
+@keyframes listening-bar {
+  0%, 100% { transform: scaleY(0.45); opacity: 0.5; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+.listening-bar {
+  animation: listening-bar 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listening-bar { animation: none; }
+}
+
 @layer base {
   :root, :host {
     --background: 0 0% 100%;

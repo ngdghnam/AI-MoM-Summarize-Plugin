@@ -1,5 +1,6 @@
+import { useRecording } from "~/hooks/useRecording"
 import { useEffect, useState, useRef } from "react"
-import { Mic, MicOff, Settings, X, MoreHorizontal, Bot } from "lucide-react"
+import { Mic, MicOff, Settings, X, MoreHorizontal, Bot, Square, Loader2 } from "lucide-react"
 import { useStorage } from "@plasmohq/storage/hook"
 import { Storage } from "@plasmohq/storage"
 import { Button } from "~/components/ui/button"
@@ -19,7 +20,7 @@ export function LiveCaptionsSidebarView() {
     instance: new Storage({ area: "local" })
   }, false)
   
-  const [isRecording, setIsRecording] = useStorage("isRecording", false)
+  const { isRecording, isStarting, recordingError, recordTime, formatTime, handleToggleRecord } = useRecording()
   
   const [isActiveMeeting, setIsActiveMeeting] = useStorage({
     key: "isActiveMeeting",
@@ -83,7 +84,6 @@ export function LiveCaptionsSidebarView() {
         
         if (!active) {
           await setIsOpen(false);
-          await setIsRecording(false);
         }
       } catch (e: any) {
         if (e.message?.includes("Extension context invalidated")) {
@@ -155,7 +155,9 @@ export function LiveCaptionsSidebarView() {
           <Button 
             variant="ghost"
             size="icon"
-            onClick={() => setIsRecording(!isRecording)}
+            onClick={handleToggleRecord}
+            disabled={isStarting}
+            aria-label={isRecording ? "Dừng ghi âm" : "Bắt đầu ghi âm"}
             title={isRecording ? "Stop Recording" : "Start Recording"}
           >
             {isRecording ? <Mic size={18} className="text-destructive" /> : <MicOff size={18} className="text-slate-500" />}
@@ -169,22 +171,63 @@ export function LiveCaptionsSidebarView() {
         </div>
       </div>
 
+      {recordingError && <p role="alert" className="p-3 text-sm text-destructive">{recordingError}</p>}
+      {isRecording && (
+        <div className="flex items-center justify-between gap-3 border-b border-orange-100 bg-orange-50/70 px-4 py-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-primary" role="status">
+            <span className="h-2 w-2 rounded-full bg-primary motion-safe:animate-pulse" />
+            Đang ghi âm
+            <span className="ml-1 font-mono tabular-nums text-slate-600">{formatTime(recordTime)}</span>
+          </div>
+          <Button onClick={handleToggleRecord} disabled={isStarting} variant="ghost" className="h-8 gap-1.5 rounded-lg px-2 text-xs text-primary hover:bg-orange-100">
+            {isStarting ? <Loader2 size={12} className="animate-spin" /> : <Square size={10} fill="currentColor" />}
+            Dừng
+          </Button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col bg-slate-50">
         {messages.length === 0 ? (
+          isRecording || isStarting ? (
+          <div className="flex flex-1 flex-col items-center justify-center px-3 py-8 text-center" role="status" aria-live="polite">
+            <div className="relative mb-7 flex h-28 w-28 items-center justify-center">
+              <div className="absolute inset-0 rounded-full border border-orange-100 bg-orange-50" />
+              <div className="absolute inset-3 rounded-full border border-orange-200/70 motion-safe:animate-pulse" />
+              <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-primary text-white shadow-lg shadow-orange-200/60">
+                {isStarting ? <Loader2 size={28} className="animate-spin" /> : <Mic size={28} strokeWidth={1.75} />}
+              </div>
+            </div>
+            <span className="mb-3 rounded-full border border-orange-200/60 bg-orange-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary">
+              {isStarting ? "Đang kết nối" : "Ghi âm đang bật"}
+            </span>
+            <h3 className="text-lg font-semibold tracking-tight text-slate-800">
+              {isStarting ? "Chuẩn bị lắng nghe…" : "AI-MoM đang lắng nghe"}
+            </h3>
+            <p className="mt-2 max-w-[260px] text-xs leading-relaxed text-slate-500">
+              {isStarting ? "Đang kết nối âm thanh cuộc họp. Chờ một chút nhé." : "Bạn cứ trò chuyện tự nhiên. Nội dung sẽ xuất hiện tại đây sau mỗi đoạn nói."}
+            </p>
+            <div className="mt-6 flex h-8 items-center justify-center gap-1" aria-hidden="true">
+              {[12, 20, 14, 28, 18, 32, 22, 14, 26, 18, 10].map((height, index) => (
+                <span key={index} className="listening-bar w-1 rounded-full bg-gradient-to-t from-primary to-orange-300" style={{ height, animationDelay: `${index * 110}ms` }} />
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] text-slate-400">{isStarting ? "Đang chuẩn bị âm thanh" : "Đang chờ lời nói…"}</p>
+          </div>
+          ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 px-4">
             <div className="w-16 h-16 rounded-full bg-slate-200/50 flex items-center justify-center text-slate-400">
               <Bot size={32} />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-slate-700 mb-1">AI-MoM Đang Chờ Lệnh</h3>
+              <h3 className="text-sm font-semibold text-slate-700 mb-1">{isRecording ? "Đang ghi âm" : "AI-MoM Đang Chờ Lệnh"}</h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Cuộc họp này chưa được ghi âm. Hãy bấm vào biểu tượng Micro (hoặc bật Live Captions ở Popup) để bắt đầu tạo Transcript nhé!
+                {isRecording ? "Đang nghe và xử lý âm thanh. Transcript sẽ xuất hiện khi bạn nói xong." : "Cuộc họp này chưa được ghi âm. Hãy bật Micro để bắt đầu tạo Transcript."}
               </p>
             </div>
-            <Button onClick={() => setIsRecording(true)} variant="outline" className="mt-2 text-primary border-primary/20 hover:bg-primary/5">
+            <Button onClick={handleToggleRecord} disabled={isStarting || isRecording} variant="outline" className="mt-2 text-primary border-primary/20 hover:bg-primary/5">
               <Mic size={16} className="mr-2" /> Bắt đầu ghi âm
             </Button>
           </div>
+          )
         ) : (
           <div className="space-y-4">
             {messages.map((msg, index) => {
@@ -213,7 +256,7 @@ export function LiveCaptionsSidebarView() {
           </div>
         )}
         
-        {isRecording && (
+        {isRecording && messages.length > 0 && (
           <div className="flex items-center gap-2 text-slate-400 text-xs px-2 animate-pulse mt-4">
             <MoreHorizontal size={16} />
             <span>Đang nghe...</span>

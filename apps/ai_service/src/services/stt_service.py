@@ -47,6 +47,10 @@ class STTService:
             chunk_duration_ms = int((len(eval_audio) / config.SAMPLE_RATE) * 1000)
             
             if has_voice:
+                if not state.is_speaking and state.pre_roll.size:
+                    state.speech_buffer.append(state.pre_roll)
+                    state.speech_duration_ms += int(state.pre_roll.size * 1000 / config.SAMPLE_RATE)
+                    state.pre_roll = np.empty(0, dtype=np.float32)
                 state.is_speaking = True
                 state.silence_duration_ms = 0
                 state.speech_buffer.append(eval_audio)
@@ -54,7 +58,7 @@ class STTService:
                 
                 # Force transcribe if speech is too long
                 if state.speech_duration_ms >= self.max_speech_ms:
-                    asyncio.create_task(self._flush_channel(channel, websocket))
+                    await self._flush_channel(channel, websocket)
             else:
                 if state.is_speaking:
                     state.speech_buffer.append(eval_audio)
@@ -62,11 +66,15 @@ class STTService:
                     state.silence_duration_ms += chunk_duration_ms
                     
                 # End of speech detected (silence duration exceeds max silence)
-                if state.silence_duration_ms >= self.max_silence_ms:
-                    asyncio.create_task(self._flush_channel(channel, websocket))
+                if state.is_speaking and (
+                    state.silence_duration_ms >= self.max_silence_ms
+                    or state.speech_duration_ms >= self.max_speech_ms
+                ):
+                    await self._flush_channel(channel, websocket)
                 else:
-                    # Ignore silence if not speaking
-                    pass
+                    if not state.is_speaking:
+                        pre_roll_samples = int(config.SAMPLE_RATE * config.VAD_PRE_ROLL_MS / 1000)
+                        state.pre_roll = np.concatenate((state.pre_roll, eval_audio))[-pre_roll_samples:]
 
     async def _flush_channel(self, channel: str, websocket: WebSocket):
         state = self.state[channel]
@@ -85,12 +93,18 @@ class STTService:
         if text:
             speaker_tag = "You" if channel == "left" else "Others"
             log.info(f"[{speaker_tag}]: {text}")
-            try:
-                await websocket.send_text(build_response(channel, text))
-            except Exception as e:
-                log.warning(f"Could not send to websocket (might be closed): {e}")
+            # Let disconnect errors terminate the connection's processing task.
+            await websocket.send_text(build_response(channel, text))
 
     async def flush_all(self, websocket: WebSocket):
         """Transcribe any remaining audio in the buffers."""
-        asyncio.create_task(self._flush_channel("left", websocket))
-        asyncio.create_task(self._flush_channel("right", websocket))
+        for channel, state in self.state.items():
+            if state.eval_buffer:
+                tail = np.concatenate(state.eval_buffer)
+                state.eval_buffer.clear()
+                if state.is_speaking or await asyncio.to_thread(has_voice_activity, tail, self.vad_model):
+                    if not state.is_speaking and state.pre_roll.size:
+                        state.speech_buffer.append(state.pre_roll)
+                    state.speech_buffer.append(tail)
+            state.pre_roll = np.empty(0, dtype=np.float32)
+            await self._flush_channel(channel, websocket)
