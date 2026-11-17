@@ -7,3 +7,4 @@ sessions
 __pycache__
 .env.local
 !.env.example
+todo
