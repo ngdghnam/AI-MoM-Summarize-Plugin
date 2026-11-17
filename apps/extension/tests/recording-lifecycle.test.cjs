@@ -159,8 +159,8 @@ test('offscreen relays captions using runtime and cleans up on remote close', as
       sendMessage: async message => { sent.push(message) }
     } }
   }
-  const component = load('tabs/offscreen.tsx', globals)
-  component.default()
+  const { useOffscreenCapture } = load('hooks/useOffscreenCapture.ts', globals)
+  useOffscreenCapture()
   effect()
   const send = message => new Promise(resolve => listener({ target: 'offscreen', ...message }, {}, resolve))
   assert.equal((await send({ type: 'start-capture', tabId: 7, streamId: 'stream' })).ok, true)
