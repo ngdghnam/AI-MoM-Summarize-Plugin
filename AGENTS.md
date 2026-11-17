@@ -134,6 +134,7 @@ A task is complete only when the requested deliverable is provided, relevant che
 
 - Before starting a defined task, create a separate Markdown file in the repository-root `todo/` directory. Use an ordered, descriptive filename such as `01-audio-contract-baseline.md`.
 - Each task file must state its objective, status, dependencies, affected components, actionable checklist, and acceptance criteria. Distinguish proposed behavior from implemented behavior.
+- Each task file must include a short `Context` section explaining the observed problem, why this task is needed in the overall plan, relevant code/document references, and scope boundaries. It must be understandable without rereading the conversation. Update this context when dependencies or decisions change; do not describe planned dependency outputs as already implemented.
 - Keep the file updated as work progresses, including check results, blockers, and remaining work. Split newly defined tasks into their own files.
 - Delete only that task's file after its deliverable, checks, and required documentation are complete. Do not delete unfinished or blocked task files, and do not delete the entire `todo/` directory.
 - Before deletion, retain durable interface/behavior decisions in the relevant project documentation and report the outcome and verification to the user. Todo files are temporary work tracking, not canonical documentation.
