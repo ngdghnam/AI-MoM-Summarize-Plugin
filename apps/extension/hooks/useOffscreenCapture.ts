@@ -8,6 +8,7 @@ export function useOffscreenCapture() {
   const tabStreamRef = useRef<MediaStream | null>(null)
   const tabIdRef = useRef<number | null>(null)
   const startingRef = useRef(false)
+  const captureMetricsRef = useRef({ frames: 0, sentFrames: 0, chunks: 0 })
 
   useEffect(() => {
     const handleMessages = (message: any, sender: any, sendResponse: any) => {
@@ -35,7 +36,7 @@ export function useOffscreenCapture() {
 
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessages)
-      stopCapture()
+      stopCapture("offscreen_cleanup")
     }
   }, [])
 
@@ -66,6 +67,19 @@ export function useOffscreenCapture() {
       audioCtxRef.current = new AudioContext({ sampleRate: 16000 })
       const audioCtx = audioCtxRef.current
       await audioCtx.resume()
+      captureMetricsRef.current = { frames: 0, sentFrames: 0, chunks: 0 }
+      console.info(JSON.stringify({
+        event: "capture_config", requestedSampleRate: 16000,
+        actualSampleRate: audioCtx.sampleRate,
+        sources: [micStreamRef.current, tabStreamRef.current].map((stream, index) => {
+          const settings = stream.getAudioTracks()[0]?.getSettings?.()
+          return { source: index === 0 ? "local_mic" : "remote_tab",
+            sampleRate: settings?.sampleRate, channelCount: settings?.channelCount }
+        })
+      }))
+      if (audioCtx.sampleRate !== 16000) {
+        throw new Error("Capture requires an actual 16000 Hz AudioContext; resampling is not implemented.")
+      }
 
       const micSource = audioCtx.createMediaStreamSource(micStreamRef.current)
       const tabSource = audioCtx.createMediaStreamSource(tabStreamRef.current)
@@ -112,7 +126,7 @@ export function useOffscreenCapture() {
       const failCapture = (error: string) => {
         if (wsRef.current !== ws) return
         rejectConnection?.(new Error(error))
-        stopCapture()
+        stopCapture(error)
         void chrome.runtime
           .sendMessage({ action: "CAPTURE_FAILED", error })
           .catch(() => {})
@@ -130,6 +144,7 @@ export function useOffscreenCapture() {
       }
 
       processor.onaudioprocess = (e) => {
+        captureMetricsRef.current.frames += e.inputBuffer.length
         if (!ws || ws.readyState !== WebSocket.OPEN) return
         if (ws.bufferedAmount > 16000 * 4 * 5) {
           failCapture(
@@ -153,6 +168,13 @@ export function useOffscreenCapture() {
         }
 
         ws.send(buffer.buffer)
+        const metrics = captureMetricsRef.current
+        metrics.sentFrames += left.length
+        metrics.chunks++
+        if (metrics.chunks % 20 === 0) {
+          console.info(JSON.stringify({ event: "capture_progress", ...metrics,
+            bufferedBytes: ws.bufferedAmount }))
+        }
       }
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(
@@ -184,12 +206,16 @@ export function useOffscreenCapture() {
       startingRef.current = false
     } catch (error) {
       console.error("Failed to start capture:", error)
-      stopCapture()
+      stopCapture("capture_start_failed")
       throw error
     }
   }
 
-  const stopCapture = () => {
+  const stopCapture = (reason = "stop_requested") => {
+    if (audioCtxRef.current) {
+      console.info(JSON.stringify({ event: "capture_end", ...captureMetricsRef.current,
+        outcome: "closed_without_drain", reason, bufferedBytes: wsRef.current?.bufferedAmount ?? 0 }))
+    }
     startingRef.current = false
     tabIdRef.current = null
     if (scriptProcessorRef.current) {

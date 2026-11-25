@@ -10,7 +10,9 @@ def deinterleave_stereo(raw_bytes: bytes) -> tuple[np.ndarray, np.ndarray]:
 
     Returns: (left_float32, right_float32) - float32 arrays in range [-1.0, 1.0]
     """
-    pcm = np.frombuffer(raw_bytes, dtype=np.int16)
+    if len(raw_bytes) % 4:
+        raise ValueError("PCM16LE stereo payload must contain complete 4-byte frames")
+    pcm = np.frombuffer(raw_bytes, dtype="<i2")
     left_int16 = pcm[0::2]
     right_int16 = pcm[1::2]
 

@@ -15,6 +15,7 @@ async function stopRecording(error = "") {
 }
 
 async function startRecording(tabId?: number) {
+  await storage.setMany({ recordingError: "" })
   if ((await captureStatus())?.active) return { ok: true }
   if (tabId == null) throw new Error("No meeting tab selected")
   const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] })
@@ -57,7 +58,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "START_RECORDING") return await startRecording(message.tabId ?? sender.tab?.id)
     const status = await captureStatus()
     if (message.action === "RECORDING_STATUS") {
-      if (!status?.active) await storage.setMany({ isRecording: false, recordingStartedAt: 0 })
+      await storage.setMany({
+        ...(!status?.active ? { isRecording: false, recordingStartedAt: 0 } : {}),
+        ...(message.clearError ? { recordingError: "" } : {})
+      })
       return { ok: true }
     }
     if (message.action === "CAPTURE_FAILED") {

@@ -8,3 +8,8 @@ class ChannelState:
         self.is_speaking: bool = False
         self.silence_duration_ms: int = 0
         self.speech_duration_ms: int = 0
+        # Half-open sample ranges on this channel's received-audio timeline.
+        self.received_samples = 0
+        self.evaluated_samples = 0
+        self.speech_start = 0
+        self.segment_sequence = 0

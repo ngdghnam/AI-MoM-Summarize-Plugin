@@ -13,10 +13,23 @@ export function useRecording(trackDuration = true) {
   const [isRecordingChanging] = useStorage({ key: "isRecordingChanging", instance: recordingStorage }, false)
   const isStarting = isPending || isRecordingChanging
   const pendingRef = useRef(false)
-  const [recordingError, setRecordingError] = useStorage({ key: "recordingError", instance: recordingStorage }, "")
+  // Errors belong to this UI's lifetime. Observe new changes without hydrating
+  // the failure persisted by a previous popup/browser session.
+  const [recordingError, setRecordingError] = useState("")
+
+  const publishRecordingError = useCallback(async (error: string) => {
+    await recordingStorage.set("recordingError", error)
+    setRecordingError(error)
+  }, [])
 
   useEffect(() => {
-    void chrome.runtime.sendMessage({ action: "RECORDING_STATUS" }).catch(() => {})
+    const watch = {
+      recordingError: ({ newValue }: { newValue?: string }) => setRecordingError(newValue || "")
+    }
+    recordingStorage.watch(watch)
+    void chrome.runtime.sendMessage({ action: "RECORDING_STATUS", clearError: true })
+      .catch(() => {})
+    return () => { recordingStorage.unwatch(watch) }
   }, [])
 
   // Recording duration
@@ -39,7 +52,7 @@ export function useRecording(trackDuration = true) {
     pendingRef.current = true
     setIsPending(true)
     try {
-      void setRecordingError("")
+      await publishRecordingError("")
       if (isRecording) {
         const response = await chrome.runtime.sendMessage({ action: "STOP_RECORDING", reason: "USER_TOGGLED" })
         if (!response?.ok) throw new Error(response?.error || "Recording did not stop")
@@ -51,12 +64,12 @@ export function useRecording(trackDuration = true) {
         if (!response?.ok) throw new Error(response?.error || "Recording did not start")
       }
     } catch (error) {
-      await setRecordingError(error instanceof Error ? error.message : String(error))
+      await publishRecordingError(error instanceof Error ? error.message : String(error))
     } finally {
       pendingRef.current = false
       setIsPending(false)
     }
-  }, [isRecording, isRecordingChanging, setRecordingError])
+  }, [isRecording, isRecordingChanging, publishRecordingError])
 
   return {
     isRecording,
